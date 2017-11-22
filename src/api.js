@@ -23,10 +23,15 @@ var EdgeGrid = function(client_token, client_secret, access_token, host, debug) 
   // accepting an object containing a path to .edgerc and a config section
   if (typeof arguments[0] === 'object') {
     request.debug = arguments[0].debug ? true : false;
-    this._setConfigFromObj(arguments[0]);
+    if (arguments[0]['path']) {
+      this._setConfigFromObj(arguments[0]);
+    }
+    this._setConfigFromEnv(arguments[0]['section']);
   } else {
     request.debug = debug ? true : false;
-    this._setConfigFromStrings(client_token, client_secret, access_token, host);
+    if (client_token && client_secret && access_token && host) {
+      this._setConfigFromStrings(client_token, client_secret, access_token, host);
+    }
   }
 };
 
@@ -69,15 +74,15 @@ EdgeGrid.prototype.auth = function(req) {
 EdgeGrid.prototype.send = function(callback) {
   request(this.request, function(error, response, body) { 
     if (error) {
-      callback(error);
-      return;
+      callback(error)
+      return
     }
     if (helpers.isRedirect(response.statusCode)) {
       this._handleRedirect(response, callback);
       return;
     }
 
-    callback(null, response, body);
+    callback(body, response);
   }.bind(this));
 
   return this;
@@ -93,6 +98,48 @@ EdgeGrid.prototype._handleRedirect = function(resp, callback) {
   this.auth(this.request);
   this.send(callback);
 };
+
+/**
+ * Creates a config object from environment variables
+ * AKAMAI_HOST
+ * AKAMAI_PAPI_ACCESS_TOKEN
+ */
+EdgeGrid.prototype._setConfigFromEnv = function(section_name) {
+  var fieldNames = ["HOST","ACCESS_TOKEN","CLIENT_TOKEN","CLIENT_SECRET","MAX_BODY"];
+  
+  var envconfig = {};
+
+  for (var fieldIndex in fieldNames) {
+    var fieldName = fieldNames[fieldIndex];
+    if (section_name == "default") {
+      envconfig[fieldName.toLowerCase()] = getValueForEnvVar('_',fieldName);
+      if (newValue = getValueForEnvVar('_DEFAULT_',fieldName)) {
+        envconfig[fieldName.toLowerCase()] = newValue;
+      }
+    } else {
+      envconfig[fieldName.toLowerCase()] = getValueForEnvVar('_'+fieldName+'_');
+    }
+  }
+  if (! envconfig['host']) {
+    // If there are no env variables to work with, keep whatever we have
+    // Don't set the variables if there's no values to use
+    return;
+  }
+
+  var host = envconfig['host'];
+
+  this.config = {
+    client_token: envconfig['client_token'],
+    client_secret: envconfig['client_secret'],
+    access_token: envconfig['access_token'],
+    host: host.indexOf('https://') > -1 ? host : 'https://' + host
+  };
+};
+
+function getValueForEnvVar(section, variable_name) {
+   var checkString = 'AKAMAI' + section + variable_name;
+   return process.env[checkString]; 
+}
 
 /**
  * Creates a config object from a set of parameters.
@@ -145,8 +192,7 @@ EdgeGrid.prototype._setConfigFromObj = function(obj) {
     if (process.env.EDGEGRID_ENV !== 'test') {
       logger.error('No .edgerc path');
     }
-
-    throw new Error('No edgerc path');
+    // Don't want to throw an error, this might be looking for env vars
   }
 
   this.config = edgerc(obj.path, obj.section);
