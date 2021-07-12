@@ -14,6 +14,7 @@
 
 var request = require('request'),
   url = require('url'),
+  jsesc = require('jsesc'),
   auth = require('./auth'),
   edgerc = require('./edgerc'),
   helpers = require('./helpers'),
@@ -64,6 +65,7 @@ EdgeGrid.prototype.auth = function(req) {
     if (typeof(req.body) == 'object' && !isTarball) {
       req.body = JSON.stringify(req.body);
     }
+    req.body = jsesc(req.body);
   }
 
   this.request = auth.generateAuth(
